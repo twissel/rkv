@@ -10,16 +10,9 @@
 
 use ordered_float::OrderedFloat;
 
-use bincode::{
-    deserialize,
-    serialize,
-    Infinite,
-};
+use bincode::{deserialize, serialize, Infinite};
 
-use uuid::{
-    Uuid,
-    UuidBytes,
-};
+use uuid::{Uuid, UuidBytes};
 
 use error::DataError;
 
@@ -39,6 +32,7 @@ pub enum Type {
     Str = 7,
     Json = 8,
     Blob = 9,
+    Empty = 10,
 }
 
 /// We use manual tagging, because <https://github.com/serde-rs/serde/issues/610>.
@@ -62,6 +56,7 @@ impl Type {
             7 => Some(Type::Str),
             8 => Some(Type::Json),
             9 => Some(Type::Blob),
+            10 => Some(Type::Empty),
             _ => None,
         }
     }
@@ -79,6 +74,7 @@ impl ::std::fmt::Display for Type {
             Type::Str => "str",
             Type::Json => "json",
             Type::Blob => "blob",
+            Type::Empty => "()",
         })
     }
 }
@@ -94,6 +90,7 @@ pub enum Value<'s> {
     Str(&'s str),
     Json(&'s str),
     Blob(&'s [u8]),
+    Empty(()),
 }
 
 // TODO: implement conversion between the two types of `Value` wrapper.
@@ -140,10 +137,7 @@ impl<'s> Value<'s> {
     fn from_type_and_data(t: Type, data: &'s [u8]) -> Result<Value<'s>, DataError> {
         if t == Type::Uuid {
             return deserialize(data)
-                .map_err(|e| DataError::DecodingError {
-                    value_type: t,
-                    err: e,
-                })
+                .map_err(|e| DataError::DecodingError { value_type: t, err: e })
                 .map(uuid)?;
         }
 
@@ -156,14 +150,12 @@ impl<'s> Value<'s> {
             Type::Str => deserialize(data).map(Value::Str),
             Type::Json => deserialize(data).map(Value::Json),
             Type::Blob => deserialize(data).map(Value::Blob),
+            Type::Empty => deserialize(data).map(Value::Empty),
             Type::Uuid => {
                 // Processed above to avoid verbose duplication of error transforms.
                 unreachable!()
-            },
-        }.map_err(|e| DataError::DecodingError {
-            value_type: t,
-            err: e,
-        })
+            }
+        }.map_err(|e| DataError::DecodingError { value_type: t, err: e })
     }
 
     pub fn to_bytes(&self) -> Result<Vec<u8>, DataError> {
@@ -176,10 +168,11 @@ impl<'s> Value<'s> {
             &Value::Str(ref v) => serialize(&(Type::Str.to_tag(), v), Infinite),
             &Value::Json(ref v) => serialize(&(Type::Json.to_tag(), v), Infinite),
             &Value::Blob(ref v) => serialize(&(Type::Blob.to_tag(), v), Infinite),
+            &Value::Empty(ref v) => serialize(&(Type::Empty.to_tag(), v), Infinite),
             &Value::Uuid(ref v) => {
                 // Processed above to avoid verbose duplication of error transforms.
                 serialize(&(Type::Uuid.to_tag(), v), Infinite)
-            },
+            }
         }.map_err(DataError::EncodingError)
     }
 }
